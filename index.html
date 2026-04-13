@@ -1,0 +1,951 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>海洋環境シミュレーション</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+    <style>
+        * { box-sizing: border-box; }
+        body { text-align: center; font-family: sans-serif; background-color: #f0f8ff; margin: 0; padding: 10px; }
+        
+        /* 📱 SPA用ビューコンテナ */
+        .view-container { display: none; flex-direction: column; align-items: center; width: 100%; animation: fadeIn 0.4s ease-in-out; }
+        .view-container.active { display: flex; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        
+        /* 🎮 タイトル・モード選択カード */
+        .mode-cards { display: flex; gap: 30px; justify-content: center; margin-top: 40px; flex-wrap: wrap; }
+        .mode-card { background: white; border: 3px solid #e0e0e0; border-radius: 12px; padding: 40px 30px; width: 320px; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        .mode-card:hover { transform: translateY(-8px); border-color: #4fc3f7; box-shadow: 0 12px 24px rgba(0,0,0,0.2); }
+        .mode-card h3 { color: #01579b; font-size: 26px; margin-top: 0; }
+        .mode-card p { color: #666; font-size: 15px; line-height: 1.6; }
+        
+        #sim-layout-container { display: flex; justify-content: center; gap: 20px; flex-wrap: wrap; align-items: flex-start; width: 100%; max-width: 1400px; margin: 15px auto 0;}
+        
+        .panel { background: white; padding: 15px; border: 1px solid #ccc; border-radius: 8px; text-align: left; margin-bottom: 10px; box-shadow: 0 2px 6px rgba(0,0,0,0.05); }
+        
+        canvas.sim-canvas { border: 3px solid #01579b; background: radial-gradient(circle at 50% 50%, #29b6f6 0%, #0288d1 60%, #01579b 100%); position: relative; cursor: crosshair; box-shadow: 0 8px 16px rgba(0,0,0,0.3); border-radius: 4px; display: block; }
+        
+        .legend { background: white; padding: 10px; border: 1px solid #ccc; border-radius: 8px; margin-top: 10px; display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; font-size: 14px; font-weight: bold; max-width: 600px; margin-left: auto; margin-right: auto; }
+        .legend span { background: #f9f9f9; padding: 4px 8px; border-radius: 4px; border: 1px solid #ddd; display: flex; align-items: center; gap: 4px;}
+        
+        .score-board { background: #333; color: #fff; padding: 15px; border-radius: 8px; margin-bottom: 15px; }
+        .score-board h3 { margin: 0 0 5px 0; color: #4fc3f7; font-size: 20px; }
+        .score-board p { margin: 4px 0; font-size: 15px; }
+        
+        .cpu-score { color: #ff5252; font-weight: bold; margin-top: 10px; font-size: 18px; border-top: 1px dashed #666; padding-top: 10px; display: none; }
+        .highlight-fish { color: #ffcc80; font-weight: bold; }
+        
+        .input-group { margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; font-size: 15px; font-weight: bold; color: #444;}
+        .input-group input, .input-group select { width: 100px; text-align: right; border: 1px solid #ccc; border-radius: 4px; padding: 4px; font-size: 14px; }
+        
+        button { width: 100%; padding: 14px; font-size: 18px; background-color: #5cb85c; color: white; border: none; border-radius: 5px; cursor: pointer; margin-top: 10px; font-weight: bold; transition: background-color 0.2s; }
+        button:hover { background-color: #4cae4c; }
+        button:disabled { background-color: #ccc; cursor: not-allowed; }
+        
+        .action-btn { background-color: #ff9800; margin-top: 15px; padding: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.2); animation: pulse 2s infinite; border-radius: 30px !important; }
+        .action-btn:hover { background-color: #f57c00; }
+        @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+        
+        .danger-btn { background-color: #f44336; margin-top: 5px; padding: 8px; font-size: 14px; }
+        .danger-btn:hover { background-color: #d32f2f; }
+        
+        #budget_display { font-size: 18px; font-weight: bold; text-align: center; margin-top: 15px; padding: 10px; background: #eee; border-radius: 4px; color: #333;}
+        .instruction { font-size: 15px; color: #555; margin-bottom: 10px; font-weight: bold;}
+
+        .leaderboard-list { list-style: none; padding: 0; margin: 0; font-size: 16px; }
+        .leaderboard-list li { padding: 8px 4px; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; border-radius: 4px;}
+        .leaderboard-list li:last-child { border-bottom: none; }
+        .rank-icon { font-weight: bold; width: 28px; display: inline-block; }
+
+        details.admin-settings { margin-top: 20px; background-color: #fafafa; border: 1px solid #ddd; border-radius: 5px; padding: 10px; font-size: 14px; }
+        details.admin-settings summary { font-weight: bold; cursor: pointer; color: #444; outline: none; }
+        .settings-content { margin-top: 10px; padding-top: 10px; border-top: 1px dashed #ccc; }
+        .settings-content h4 { margin: 10px 0 5px 0; color: #555; font-size: 13px; }
+        
+        /* レポートモーダル */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.7); z-index: 1000; justify-content: center; align-items: center; }
+        .modal-content { background: white; width: 360px; padding: 30px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); position: relative; text-align: center; border: 4px solid #4fc3f7; }
+        .close-btn { position: absolute; top: 10px; right: 15px; font-size: 28px; cursor: pointer; color: #888; font-weight: bold; }
+        .close-btn:hover { color: #333; }
+        .report-title { color: #01579b; margin-top: 0; border-bottom: 2px solid #e1f5fe; padding-bottom: 10px; }
+        .report-score { font-size: 36px; font-weight: bold; color: #ff9800; margin: 15px 0; }
+        .report-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; text-align: left; background: #f5f5f5; padding: 15px; border-radius: 8px; font-size: 14px; margin-bottom: 20px;}
+        .report-grid div { border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+        #qrcode-container { display: flex; justify-content: center; margin-top: 10px; padding: 10px; background: white; }
+        #qrcode-canvas { width: 160px; height: 160px; }
+    </style>
+</head>
+<body>
+    
+    <div id="view-title" class="view-container active" style="padding-top: 50px;">
+        <h1 style="font-size: 3.5em; color: #01579b; margin-bottom: 10px; text-shadow: 2px 2px 4px rgba(0,0,0,0.1);">海洋プラ回収シミュレーション</h1>
+        <p style="font-size: 1.2em; color: #555; font-weight: bold;">群ロボット制御とAIパラメータの最適化を探求するメタゲーム</p>
+        
+        <div class="mode-cards">
+            <div class="mode-card" onclick="goToConfig('solo')">
+                <div style="font-size: 60px; margin-bottom: 10px;">👤</div>
+                <h3>ソロプレイ<br><span style="font-size:16px; color:#888;">(スコアアタック)</span></h3>
+                <p>自由に編成とAIを調整し、限られたターンで海域のゴミを回収。歴代のトッププレイヤーと順位を競います。</p>
+            </div>
+            <div class="mode-card" onclick="goToConfig('cpu')">
+                <div style="font-size: 60px; margin-bottom: 10px;">🤖</div>
+                <h3>VS 学習AI<br><span style="font-size:16px; color:#ff5252;">(メタ対戦)</span></h3>
+                <p>過去にハイスコアを出したプレイヤーたちの戦術（編成・重み）を自動学習したCPUの船団と、同じ海域で直接対決します。</p>
+            </div>
+        </div>
+    </div>
+
+    <div id="view-config" class="view-container">
+        <h2 id="config_title" style="color: #01579b; font-size: 2em; margin-bottom: 5px;">出撃設定</h2>
+        <p style="color: #666; margin-bottom: 20px;">あなたの艦隊の構成と、AIの思考ウェイトを決定してください。</p>
+        
+        <div class="panel" style="width: 500px; max-width: 95%; margin-bottom: 20px; background-color: #e1f5fe; border: 2px solid #29b6f6;">
+            <h4 style="margin-top:0; margin-bottom: 10px; color:#01579b; font-size:18px;">💡 スコアのきまり（どうやったら勝てる？）</h4>
+            
+            <div style="background:#fff; padding:10px; border-radius:6px; margin-bottom:10px;">
+                <p style="margin:0; font-weight:bold; color:#f57c00; font-size:15px;">👦👧 かんたんなルール</p>
+                <p style="margin:5px 0 0 0; font-size:13px; color:#444; line-height:1.5;">
+                    海にある<b>ゴミ(🗑️)をたくさん拾う</b>と点数がアップ！<br>
+                    でも、<b>「ロボットがぶつかる💥」「魚に近づきすぎて怖がらせる🐟」「電気を使いすぎる⚡」</b>と点数が減っちゃうよ。<br>
+                    バランスよくロボットを設定して、かしこく海をきれいにしよう！
+                </p>
+            </div>
+
+            <div style="background:#f5f5f5; padding:10px; border-radius:6px; border:1px dashed #ccc;">
+                <p style="margin:0; font-weight:bold; color:#555; font-size:14px;">📐 くわしい計算式（大人向け）</p>
+                <p style="margin:5px 0 0 0; font-size:12px; color:#333; font-family:monospace; line-height:1.6;">
+                    最終スコア = <br>
+                    　＋ (回収したゴミの数 × 30) <br>
+                    　－ (ロボットの衝突回数 × 10) <br>
+                    　－ (消費した総電力 × 0.2) <br>
+                    　－ (魚が受けたストレスの合計 × 0.5)
+                </p>
+            </div>
+        </div>
+
+        <div class="panel" style="width: 500px; max-width: 95%;">
+            <h4>👤 プレイヤー情報</h4>
+            <div class="input-group">プレイヤー名 <input type="text" id="player_name" value="Player" style="width: 150px;"></div>
+            
+            <hr style="margin:20px 0;">
+            <h4>🚢 機体編成 (予算内で配分)</h4>
+            <div class="input-group">
+                📡 探索用 スカウト船 <span style="font-size:12px; color:#888; margin-left:10px;">(単価: <span id="lbl_cost_scout">200</span>)</span>
+                <input type="number" id="num_scouts" value="1" min="0" oninput="calculateBudget()">
+            </div>
+            <div class="input-group">
+                🚢 回収用 コレクター船 <span style="font-size:12px; color:#888; margin-left:10px;">(単価: <span id="lbl_cost_col">300</span>)</span>
+                <input type="number" id="num_collectors" value="4" min="0" oninput="calculateBudget()">
+            </div>
+            <div id="budget_display">現在コスト: 1400 / 2000</div>
+            
+            <hr style="margin:20px 0;">
+            <h4>🧠 AI思考重み設定 (挙動の決定)</h4>
+            <label style="font-weight:bold; color:#444; display:block; margin-bottom:5px;">🎯 ゴミへの引力: <span id="val_trash" style="color:#0288d1;">1.0</span></label>
+            <input type="range" id="w_trash" min="0" max="3" step="0.1" value="1.0" style="width:100%; margin-bottom:15px;" oninput="updateRangeText()">
+            
+            <label style="font-weight:bold; color:#444; display:block; margin-bottom:5px;">🐟 生物からの斥力 (回避): <span id="val_avoidfish" style="color:#0288d1;">1.0</span></label>
+            <input type="range" id="w_avoidfish" min="0" max="3" step="0.1" value="1.0" style="width:100%; margin-bottom:15px;" oninput="updateRangeText()">
+            
+            <label style="font-weight:bold; color:#444; display:block; margin-bottom:5px;">🤖 味方機体からの斥力 (分散): <span id="val_avoidrobot" style="color:#0288d1;">1.0</span></label>
+            <input type="range" id="w_avoidrobot" min="0" max="3" step="0.1" value="1.0" style="width:100%;" oninput="updateRangeText()">
+
+            <button class="action-btn" id="start_btn" onclick="startSimulation()">🚀 この設定で海域へ出撃する</button>
+            <button onclick="backToTitle()" style="background-color: #9e9e9e; padding: 10px;">キャンセルしてタイトルへ戻る</button>
+
+            <details class="admin-settings">
+                <summary>⚙️ 運営・ゲーム詳細設定</summary>
+                <div class="settings-content">
+                    <div class="input-group">制限ターン <input type="number" id="max_steps" value="120"></div>
+                    <div class="input-group">目標スコア <input type="number" id="target_score" value="2000"></div>
+                    <div class="input-group">魚のストレス上限 <input type="number" id="fish_stress_limit" value="10.0" step="1.0"></div>
+                    <div class="input-group">バッテリー上限 <input type="number" id="max_battery" value="200"></div>
+                    <div class="input-group">充電ターン数 <input type="number" id="charge_time" value="10"></div>
+                    <div class="input-group">予算上限 <input type="number" id="budget_total" value="2000" oninput="calculateBudget()"></div>
+                    <div class="input-group">ｽｶｳﾄ単価 <input type="number" id="cost_scout" value="200" oninput="calculateBudget()"></div>
+                    <div class="input-group">回収船単価 <input type="number" id="cost_collector" value="300" oninput="calculateBudget()"></div>
+                    <button class="danger-btn" onclick="clearLeaderboard()">ランキングを全消去</button>
+                </div>
+            </details>
+        </div>
+    </div>
+
+    <div id="view-sim" class="view-container">
+        
+        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; max-width: 1200px;">
+             <button onclick="backToTitle()" style="width:auto; background-color:#f44336; padding: 8px 20px; font-size: 14px;">🛑 終了してタイトルへ戻る</button>
+             <h2 style="margin:0; color:#01579b;" id="sim_mode_title">ソロプレイ (スコアアタック)</h2>
+             <div id="report_btn_container" style="display:none;">
+                 <button class="action-btn" onclick="showReport()" style="width: auto; padding: 8px 20px; margin:0; font-size:16px;">📊 レポート発行</button>
+             </div>
+        </div>
+
+        <div id="sim-layout-container">
+            <div style="width: 600px;">
+                <p class="instruction">💡 海域をクリックしてスカウト船を誘導（※VS AIでは青い船のみ従います）</p>
+                <canvas id="simCanvas" class="sim-canvas" width="600" height="600"></canvas>
+                <div class="legend">
+                    <span><span style="display:inline-block; width:12px; height:12px; background:rgba(0,150,255,0.6); border-radius:50%;"></span> あなたの船</span>
+                    <span id="legend_cpu" style="display:none;"><span style="display:inline-block; width:12px; height:12px; background:rgba(255,0,0,0.6); border-radius:50%;"></span> 学習AIの船</span>
+                    <span>🟢 探索範囲</span>
+                    <span>🗑️ 未発見</span>
+                    <span>✨🗑️ 発見済</span>
+                    <span>🐟 生物</span>
+                    <span>📍 目標</span>
+                </div>
+            </div>
+
+            <div style="width: 280px;">
+                <div class="panel" style="width:100%;">
+                    <div class="score-board">
+                        <h3 style="color:#fff;">あなた: <span id="disp_score" style="color:#4fc3f7;">0</span> pt</h3>
+                        <p style="font-size:12px; color:#aaa; margin-top:-5px;">目標: <span id="disp_target">2000</span> pt</p>
+                        
+                        <div id="cpu_score_area" class="cpu-score">
+                            💻 学習AI: <span id="disp_cpu_score">0</span> pt
+                        </div>
+                        
+                        <p style="margin-top:15px; font-size: 16px;">残りターン: <span id="disp_step" style="font-size:20px; font-weight:bold;">120</span></p>
+                        <p class="highlight-fish">海洋生物 (現在 / 初期): <span id="disp_fish">10 / 10</span></p>
+                        <hr style="border-color:#555; margin:10px 0;">
+                        <p style="font-size:13px;">回収: <span id="disp_trash">0</span> | 衝突: <span id="disp_col">0</span></p>
+                        <p style="font-size:13px;">電力: <span id="disp_ene">0</span> | 環境ストレス: <span id="disp_stress">0.0</span></p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="leaderboard_panel" style="width: 280px;">
+                <div class="panel" style="background-color: #fff9c4; border-color: #fbc02d; width: 100%;">
+                    <h3 id="leaderboard_title" style="margin-top: 0; color: #f57f17; text-align: center;">🏆 歴代ランキング</h3>
+                    <ul class="leaderboard-list" id="leaderboard_list">
+                        <li><span style="color: #888;">待機中...</span></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="report_modal" class="modal-overlay">
+        <div class="modal-content">
+            <span class="close-btn" onclick="closeReport()">&times;</span>
+            <h2 class="report-title" id="rep_title">📝 プレイレポート</h2>
+            <div style="font-size: 18px; font-weight: bold; color: #333;" id="rep_name">Player さん</div>
+            
+            <div class="report-score" id="rep_score">0 pt</div>
+            <div id="rep_result_text" style="font-size:20px; font-weight:bold; margin-bottom:10px; display:none;"></div>
+            
+            <div class="report-grid">
+                <div id="rep_rank_area" style="grid-column: span 2;"><strong>🏆 順位:</strong> <span id="rep_rank">--</span> / <span id="rep_total">--</span>位 (偏差値: <span id="rep_dev">--</span>)</div>
+                <div id="rep_cpu_area" style="grid-column: span 2; display:none;"><strong>💻 学習AIスコア:</strong> <span id="rep_cpu_score">0</span> pt</div>
+                
+                <div><strong>📡 探索:</strong> <span id="rep_scout">--</span> 台</div>
+                <div><strong>🚢 回収:</strong> <span id="rep_col">--</span> 台</div>
+                <div style="grid-column: span 2;"><strong>🤖 AI思考 (引力/斥力/分散):</strong> <br> <span id="rep_weights">-- / -- / --</span></div>
+            </div>
+
+            <div id="qrcode-container">
+                <canvas id="qrcode-canvas"></canvas>
+            </div>
+            <div class="qr-caption">📷 スマホのカメラ等で読み取って保存</div>
+        </div>
+    </div>
+
+    <script>
+        // === SPA View 管理 ===
+        let currentMode = "solo";
+
+        function goToConfig(mode) {
+            currentMode = mode;
+            document.getElementById('view-title').classList.remove('active');
+            document.getElementById('view-config').classList.add('active');
+            
+            if (mode === "solo") {
+                document.getElementById('config_title').innerHTML = "👤 ソロモード 出撃設定";
+            } else {
+                document.getElementById('config_title').innerHTML = "🤖 VS 学習AIモード 出撃設定 <br><span style=\"font-size:14px; color:#ff5252;\">(※ランキング記録なし)</span>";
+            }
+            // 表示切替時に予算計算を走らせてコストラベルを更新
+            calculateBudget();
+        }
+
+        function backToTitle() {
+            fetch('/standby', {method: 'POST'});
+            document.getElementById('view-config').classList.remove('active');
+            document.getElementById('view-sim').classList.remove('active');
+            document.getElementById('view-title').classList.add('active');
+            document.getElementById("report_btn_container").style.display = "none";
+        }
+
+        // === キャンバスとシミュレーション変数 ===
+        const canvas = document.getElementById('simCanvas');
+        const ctx = canvas.getContext('2d');
+        const cellSize = 30;
+        
+        let currentState = null;
+        let previousTrash = [];
+        let effects = [];
+        let visualRobots = {};
+        let visualFishes = {};
+
+        // ✨ 演出用変数群
+        let lastRankStep = 0;
+        let lastKnownRank = -1; 
+        let rankPopupEffect = null;
+        
+        // 追加: 衝突と魚の死亡検知
+        let lastCollisionCount = 0;
+        let lastFishCount = 10;
+        let collisionEffect = null;
+        let fishDeathEffect = null;
+
+        function getOrdinal(n) {
+            const s = ["th", "st", "nd", "rd"];
+            const v = n % 100;
+            return n + (s[(v - 20) % 10] || s[v] || s[0]);
+        }
+
+        const ws = new WebSocket("ws://localhost:8000/ws");
+
+        ws.onmessage = function(event) {
+            currentState = JSON.parse(event.data);
+            
+            if(currentState.status === "standby") return;
+            
+            updateUI(currentState);
+            
+            if (currentState.step === 0) {
+                previousTrash = [];
+                effects = [];
+                visualRobots = {};
+                visualFishes = {};
+                
+                lastRankStep = 0;
+                lastKnownRank = -1;
+                rankPopupEffect = null;
+                
+                lastCollisionCount = 0;
+                lastFishCount = currentState.fishes ? currentState.fishes.length : 10;
+                collisionEffect = null;
+                fishDeathEffect = null;
+                
+                document.getElementById("report_btn_container").style.display = "none";
+            } 
+            
+            if (currentState.robots) {
+                currentState.robots.forEach(r => {
+                    if (!visualRobots[r.id]) visualRobots[r.id] = { x: r.x, y: r.y };
+                });
+            }
+            if (currentState.fishes) {
+                currentState.fishes.forEach(f => {
+                    if (!visualFishes[f.id]) visualFishes[f.id] = { x: f.x, y: f.y };
+                });
+            }
+
+            if (previousTrash.length > 0 && currentState.trash) {
+                previousTrash.forEach(oldT => {
+                    const stillExists = currentState.trash.some(newT => Math.abs(newT.x - oldT.x) < 0.01 && Math.abs(newT.y - oldT.y) < 0.01);
+                    if (!stillExists) {
+                        effects.push({ x: oldT.x, y: oldT.y, life: 1.0 });
+                    }
+                });
+            }
+            if (currentState.trash) {
+                previousTrash = [...currentState.trash];
+            }
+
+            // ✨ イベントカットインの検知ロジック
+            if (currentState.status === "running") {
+                
+                // 1. 衝突の検知
+                let totalCols = currentState.stats.n_collision + (currentState.cpu_stats ? currentState.cpu_stats.n_collision : 0);
+                if (totalCols > lastCollisionCount) {
+                    collisionEffect = { text: "💥 ロボット衝突！", color: "#FF3D00", life: 1.5 };
+                    lastCollisionCount = totalCols;
+                }
+
+                // 2. 魚の死亡（消滅）の検知
+                if (currentState.fishes && currentState.fishes.length < lastFishCount && currentState.fishes.length >= 0) {
+                    fishDeathEffect = { text: "🐟 魚が死んでしまった...", color: "#9C27B0", life: 2.0 };
+                    lastFishCount = currentState.fishes.length;
+                } else if (currentState.fishes && currentState.fishes.length > lastFishCount) {
+                    // リセット時などは単純に更新
+                    lastFishCount = currentState.fishes.length;
+                }
+
+                // 3. 順位の検知 (ソロモードのみ、10ステップごと)
+                if (currentState.mode === "solo" && currentState.step % 10 === 0 && currentState.step > 0 && currentState.step !== lastRankStep) {
+                    lastRankStep = currentState.step;
+                    let myRank = -1;
+                    if (currentState.current_ranking) {
+                        for (let i = 0; i < currentState.current_ranking.length; i++) {
+                            if (currentState.current_ranking[i].name.includes("(あなた)")) {
+                                myRank = i + 1;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (myRank > 0) {
+                        let color = "#FFD700"; 
+                        let symbol = "➖";
+                        
+                        if (lastKnownRank !== -1) {
+                            if (myRank < lastKnownRank) {
+                                color = "#4CAF50"; 
+                                symbol = "➚";
+                            } else if (myRank > lastKnownRank) {
+                                color = "#F44336"; 
+                                symbol = "📉";
+                            }
+                        }
+                        lastKnownRank = myRank;
+
+                        rankPopupEffect = {
+                            text: `${getOrdinal(myRank)} ${symbol}`,
+                            color: color,
+                            life: 1.5 
+                        };
+                    }
+                }
+            }
+        };
+
+        function animate() {
+            if (currentState && currentState.status === "running") {
+                const lerpSpeed = 0.2;
+
+                if (currentState.robots) {
+                    currentState.robots.forEach(r => {
+                        let vr = visualRobots[r.id];
+                        if (vr) {
+                            vr.x += (r.x - vr.x) * lerpSpeed;
+                            vr.y += (r.y - vr.y) * lerpSpeed;
+                        }
+                    });
+                }
+                
+                if (currentState.fishes) {
+                    currentState.fishes.forEach(f => {
+                        let vf = visualFishes[f.id];
+                        if (vf) {
+                            if (Math.abs(f.x - vf.x) > 10) vf.x = f.x;
+                            else vf.x += (f.x - vf.x) * lerpSpeed;
+                            
+                            if (Math.abs(f.y - vf.y) > 10) vf.y = f.y;
+                            else vf.y += (f.y - vf.y) * lerpSpeed;
+                        }
+                    });
+                }
+            }
+            
+            if (currentState && currentState.status !== "standby") {
+                draw(currentState);
+            }
+            requestAnimationFrame(animate);
+        }
+        
+        requestAnimationFrame(animate);
+
+        canvas.addEventListener('click', function(event) {
+            if(currentState && currentState.status === "running") {
+                const rect = canvas.getBoundingClientRect();
+                const x = (event.clientX - rect.left) / cellSize;
+                const y = (event.clientY - rect.top) / cellSize;
+                
+                fetch('/add_waypoint', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ x: x, y: y })
+                });
+            }
+        });
+
+        function updateRangeText() {
+            document.getElementById('val_trash').innerText = document.getElementById('w_trash').value;
+            document.getElementById('val_avoidfish').innerText = document.getElementById('w_avoidfish').value;
+            document.getElementById('val_avoidrobot').innerText = document.getElementById('w_avoidrobot').value;
+        }
+
+        function calculateBudget() {
+            const total = parseInt(document.getElementById('budget_total').value) || 0;
+            const c_scout = parseInt(document.getElementById('cost_scout').value) || 0;
+            const c_col = parseInt(document.getElementById('cost_collector').value) || 0;
+            const n_scout = parseInt(document.getElementById('num_scouts').value) || 0;
+            const n_col = parseInt(document.getElementById('num_collectors').value) || 0;
+            
+            // コスト表示ラベルの更新
+            document.getElementById('lbl_cost_scout').innerText = c_scout;
+            document.getElementById('lbl_cost_col').innerText = c_col;
+            
+            const currentCost = (c_scout * n_scout) + (c_col * n_col);
+            const display = document.getElementById('budget_display');
+            display.innerText = `現在コスト: ${currentCost} / ${total}`;
+            
+            if (currentCost > total) {
+                display.style.color = "red";
+                document.getElementById('start_btn').disabled = true;
+                document.getElementById('start_btn').innerText = "予算超過";
+            } else {
+                display.style.color = "#333";
+                document.getElementById('start_btn').disabled = false;
+                document.getElementById('start_btn').innerText = "🚀 この設定で海域へ出撃する";
+            }
+        }
+
+        function updateUI(state) {
+            document.getElementById('sim_mode_title').innerText = state.mode === "solo" ? "👤 ソロプレイ" : "🤖 VS 学習AI";
+            document.getElementById('legend_cpu').style.display = state.mode === "cpu" ? "inline-block" : "none";
+
+            document.getElementById('disp_score').innerText = state.stats.score;
+            document.getElementById('disp_target').innerText = state.target_score;
+            document.getElementById('disp_step').innerText = Math.max(0, state.max_steps - state.step);
+            
+            const currentFishes = state.fishes ? state.fishes.length : 10;
+            document.getElementById('disp_fish').innerText = `${currentFishes} / 10`;
+
+            const cpuArea = document.getElementById('cpu_score_area');
+            const lbPanel = document.getElementById('leaderboard_panel');
+            if (state.mode === "cpu") {
+                cpuArea.style.display = "block";
+                lbPanel.style.visibility = "hidden"; // レイアウト維持のため display:none ではなく visibility:hidden
+                document.getElementById('disp_cpu_score').innerText = state.cpu_stats ? state.cpu_stats.score : 0;
+            } else {
+                cpuArea.style.display = "none";
+                lbPanel.style.visibility = "visible";
+            }
+
+            document.getElementById('disp_trash').innerText = state.stats.n_trash;
+            document.getElementById('disp_col').innerText = state.stats.n_collision;
+            document.getElementById('disp_ene').innerText = state.stats.energy;
+            document.getElementById('disp_stress').innerText = state.stats.total_stress.toFixed(1);
+
+            if (state.mode === "solo") {
+                const lbList = document.getElementById('leaderboard_list');
+                const lbTitle = document.getElementById('leaderboard_title');
+                
+                if (state.status === "finished") {
+                    lbTitle.innerHTML = '🏆 最終ランキング Top 10';
+                    if(state.final_report) document.getElementById("report_btn_container").style.display = "block";
+                } else if (state.status === "running") {
+                    lbTitle.innerHTML = `🏆 リーダーボード`;
+                }
+
+                if (state.current_ranking && state.current_ranking.length > 0) {
+                    lbList.innerHTML = '';
+                    let playerIndex = -1;
+                    let playerEntry = null;
+                    for (let i = 0; i < state.current_ranking.length; i++) {
+                        if (state.current_ranking[i].name.includes("(あなた)")) {
+                            playerIndex = i;
+                            playerEntry = state.current_ranking[i];
+                            break;
+                        }
+                    }
+
+                    state.current_ranking.slice(0, 10).forEach((entry, index) => {
+                        const li = document.createElement('li');
+                        let rankIcon = `${index + 1}.`;
+                        if (index === 0) rankIcon = '🥇';
+                        if (index === 1) rankIcon = '🥈';
+                        if (index === 2) rankIcon = '🥉';
+
+                        let nameStr = entry.name;
+                        if (nameStr.includes("(あなた)")) {
+                            nameStr = `<span style="color: #d32f2f; font-weight: bold;">${nameStr}</span>`;
+                            li.style.backgroundColor = "#ffe0b2";
+                        }
+
+                        li.innerHTML = `<span><span class="rank-icon">${rankIcon}</span> ${nameStr}</span> <span style="font-weight:bold;">${entry.score} pt</span>`;
+                        lbList.appendChild(li);
+                    });
+
+                    if (playerIndex >= 10 && playerEntry) {
+                        const separatorLi = document.createElement('li');
+                        separatorLi.style.justifyContent = "center";
+                        separatorLi.style.color = "#888";
+                        separatorLi.style.padding = "2px 0";
+                        separatorLi.innerHTML = "⋮";
+                        lbList.appendChild(separatorLi);
+
+                        const li = document.createElement('li');
+                        li.style.backgroundColor = "#ffe0b2";
+                        let rankIcon = `${playerIndex + 1}.`;
+                        let nameStr = `<span style="color: #d32f2f; font-weight: bold;">${playerEntry.name}</span>`;
+                        li.innerHTML = `<span><span class="rank-icon">${rankIcon}</span> ${nameStr}</span> <span style="font-weight:bold;">${playerEntry.score} pt</span>`;
+                        lbList.appendChild(li);
+                    }
+                } else {
+                    lbList.innerHTML = '<li><span style="color: #888;">まだ記録がありません</span></li>';
+                }
+            } else {
+                if (state.status === "finished" && state.final_report) {
+                    document.getElementById("report_btn_container").style.display = "block";
+                }
+            }
+        }
+
+        function draw(state) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.15)";
+            ctx.lineWidth = 1;
+            for(let i=0; i<=20; i++) {
+                ctx.beginPath(); ctx.moveTo(i * cellSize, 0); ctx.lineTo(i * cellSize, 20 * cellSize); ctx.stroke();
+                ctx.beginPath(); ctx.moveTo(0, i * cellSize); ctx.lineTo(20 * cellSize, i * cellSize); ctx.stroke();
+            }
+
+            state.robots.forEach(r => {
+                let vr = visualRobots[r.id] || r;
+                if (r.type === "scout" && !r.is_charging) {
+                    // ✨ 修正：プレイヤーの探索範囲を海で映える「明るい緑色」に変更
+                    ctx.fillStyle = r.owner === "player" ? "rgba(0, 255, 100, 0.2)" : "rgba(255, 50, 150, 0.15)";
+                    ctx.beginPath();
+                    ctx.arc(vr.x * cellSize, vr.y * cellSize, 7 * cellSize, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            });
+
+            state.fishes.forEach(f => {
+                let vf = visualFishes[f.id] || f;
+                const limit = state.fish_stress_limit || 10.0;
+                const stressRatio = Math.min(f.stress / limit, 1.0);
+                const rColor = Math.floor(255 * stressRatio);
+                const gColor = Math.floor(200 * (1 - stressRatio));
+                
+                ctx.fillStyle = `rgba(${rColor}, ${gColor}, 0, 0.5)`;
+                ctx.beginPath(); 
+                ctx.arc(vf.x * cellSize, vf.y * cellSize, cellSize/1.8, 0, Math.PI * 2); 
+                ctx.fill();
+            });
+
+            state.robots.forEach(r => {
+                let vr = visualRobots[r.id] || r;
+                if (r.type === "scout" && r.target) {
+                    ctx.strokeStyle = r.owner === "player" ? "rgba(0, 255, 100, 0.6)" : "rgba(255, 100, 100, 0.6)";
+                    ctx.lineWidth = 2;
+                    ctx.beginPath();
+                    ctx.moveTo(vr.x * cellSize, vr.y * cellSize);
+                    ctx.lineTo(r.target.x * cellSize, r.target.y * cellSize);
+                    ctx.stroke();
+                }
+                if (r.type === "collector" && r.target) {
+                    ctx.strokeStyle = r.owner === "player" ? "rgba(200, 230, 255, 0.7)" : "rgba(255, 200, 200, 0.7)";
+                    ctx.lineWidth = 2;
+                    ctx.setLineDash([4, 4]);
+                    ctx.beginPath();
+                    ctx.moveTo(vr.x * cellSize, vr.y * cellSize);
+                    ctx.lineTo(r.target.x * cellSize, r.target.y * cellSize);
+                    ctx.stroke();
+                    ctx.setLineDash([]);
+                }
+            });
+
+            ctx.fillStyle = "#000000";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+
+            ctx.font = "26px sans-serif";
+            state.fishes.forEach(f => {
+                let vf = visualFishes[f.id] || f;
+                ctx.fillText("🐟", vf.x * cellSize, vf.y * cellSize);
+            });
+
+            ctx.font = "26px sans-serif";
+            state.trash.forEach(t => {
+                const isDiscoveredPlayer = state.shared_trash_memory && state.shared_trash_memory.some(mt => Math.abs(mt.x - t.x) < 0.01 && Math.abs(mt.y - t.y) < 0.01);
+                const isDiscoveredCpu = state.cpu_shared_trash_memory && state.cpu_shared_trash_memory.some(mt => Math.abs(mt.x - t.x) < 0.01 && Math.abs(mt.y - t.y) < 0.01);
+                
+                if (isDiscoveredPlayer || isDiscoveredCpu) {
+                    ctx.fillStyle = "rgba(255, 215, 0, 0.6)";
+                    ctx.beginPath();
+                    ctx.arc(t.x * cellSize, t.y * cellSize, cellSize/1.4, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = "#000000";
+                    ctx.globalAlpha = 1.0;
+                } else {
+                    ctx.globalAlpha = 0.5;
+                }
+                ctx.fillText("🗑️", t.x * cellSize, t.y * cellSize);
+                ctx.globalAlpha = 1.0;
+            });
+
+            if (state.scout_waypoints) {
+                state.scout_waypoints.forEach(wp => {
+                    ctx.fillText("📍", wp.x * cellSize, wp.y * cellSize);
+                });
+            }
+
+            state.robots.forEach(r => {
+                let vr = visualRobots[r.id] || r;
+                
+                ctx.fillStyle = r.owner === "player" ? "rgba(0, 150, 255, 0.4)" : "rgba(255, 0, 0, 0.4)";
+                ctx.beginPath();
+                ctx.arc(vr.x * cellSize, vr.y * cellSize, 20, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = "#000";
+                const icon = (r.type === "scout") ? "📡" : "🚢";
+                
+                ctx.font = "36px sans-serif";
+                ctx.fillText(icon, vr.x * cellSize, vr.y * cellSize);
+                
+                if (r.type === "collector" && r.target) {
+                    ctx.font = "20px sans-serif";
+                    ctx.fillText("🎯", r.target.x * cellSize, r.target.y * cellSize);
+                }
+
+                if (r.is_charging) {
+                    ctx.font = "18px sans-serif";
+                    ctx.fillText("⚡", vr.x * cellSize + 15, vr.y * cellSize - 15);
+                }
+            });
+
+            // 回収エフェクト (ポップアップ)
+            for (let i = effects.length - 1; i >= 0; i--) {
+                let ef = effects[i];
+                ctx.globalAlpha = Math.max(0, ef.life);
+                const yOffset = (1 - ef.life) * 30; 
+                
+                ctx.font = "26px sans-serif";
+                ctx.fillText("✨", ef.x * cellSize, ef.y * cellSize - yOffset);
+                
+                ctx.fillStyle = "#FF9800";
+                ctx.font = "bold 18px sans-serif";
+                ctx.fillText("+30", ef.x * cellSize + 15, ef.y * cellSize - 10 - yOffset);
+                
+                ctx.globalAlpha = 1.0;
+                ctx.fillStyle = "#000000";
+                
+                ef.life -= 0.02; 
+                if (ef.life <= 0) {
+                    effects.splice(i, 1);
+                }
+            }
+
+            // ✨ 新規追加：位置をずらしたイベントカットイン群の描画
+            
+            // 1. 順位カットイン (Y = 1/4)
+            if (rankPopupEffect && state.mode === "solo") {
+                ctx.save();
+                let alpha = 1.0;
+                if (rankPopupEffect.life > 1.2) alpha = (1.5 - rankPopupEffect.life) / 0.3; 
+                else if (rankPopupEffect.life < 0.5) alpha = rankPopupEffect.life / 0.5; 
+                
+                ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+                const yOffset = (1.5 - rankPopupEffect.life) * 20;
+                const textY = canvas.height * 0.25 - yOffset; // 上から25%の位置
+
+                ctx.textAlign = "center"; ctx.textBaseline = "middle";
+                ctx.font = "bold italic 64px 'Arial Black', Impact, sans-serif";
+                const text = rankPopupEffect.text;
+
+                ctx.strokeStyle = "rgba(0, 20, 50, 0.8)"; ctx.lineWidth = 10; ctx.lineJoin = "round";
+                ctx.strokeText(text, canvas.width / 2, textY);
+                ctx.fillStyle = rankPopupEffect.color;
+                ctx.fillText(text, canvas.width / 2, textY);
+                ctx.restore();
+
+                rankPopupEffect.life -= 0.015; 
+                if (rankPopupEffect.life <= 0) rankPopupEffect = null;
+            }
+
+            // 2. 魚の死亡カットイン (Y = 2/4)
+            if (fishDeathEffect) {
+                ctx.save();
+                let alpha = Math.min(1, fishDeathEffect.life * 2);
+                ctx.globalAlpha = Math.max(0, alpha);
+                const yOffset = (2.0 - fishDeathEffect.life) * 15;
+                const textY = canvas.height * 0.5 - yOffset; // 中央
+
+                ctx.textAlign = "center"; ctx.textBaseline = "middle";
+                ctx.font = "bold 50px sans-serif";
+                
+                ctx.strokeStyle = "rgba(255, 255, 255, 0.9)"; ctx.lineWidth = 8; ctx.lineJoin = "round";
+                ctx.strokeText(fishDeathEffect.text, canvas.width / 2, textY);
+                ctx.fillStyle = fishDeathEffect.color;
+                ctx.fillText(fishDeathEffect.text, canvas.width / 2, textY);
+                ctx.restore();
+
+                fishDeathEffect.life -= 0.015; 
+                if (fishDeathEffect.life <= 0) fishDeathEffect = null;
+            }
+
+            // 3. 衝突カットイン (Y = 3/4)
+            if (collisionEffect) {
+                ctx.save();
+                let alpha = Math.min(1, collisionEffect.life * 2.5);
+                ctx.globalAlpha = Math.max(0, alpha);
+                const yOffset = (1.5 - collisionEffect.life) * 25;
+                const textY = canvas.height * 0.75 - yOffset; // 下から25%の位置
+
+                ctx.textAlign = "center"; ctx.textBaseline = "middle";
+                ctx.font = "bold italic 48px sans-serif";
+                
+                ctx.strokeStyle = "rgba(255, 255, 255, 0.9)"; ctx.lineWidth = 8; ctx.lineJoin = "round";
+                ctx.strokeText(collisionEffect.text, canvas.width / 2, textY);
+                ctx.fillStyle = collisionEffect.color;
+                ctx.fillText(collisionEffect.text, canvas.width / 2, textY);
+                ctx.restore();
+
+                collisionEffect.life -= 0.02; 
+                if (collisionEffect.life <= 0) collisionEffect = null;
+            }
+
+            // 終了画面
+            if (state.status === "finished") {
+                ctx.fillStyle = "rgba(0, 0, 0, 0.6)";
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                if (state.mode === "cpu") {
+                    ctx.font = "bold 40px sans-serif";
+                    ctx.textAlign = "center";
+                    ctx.textBaseline = "middle";
+                    if (state.stats.score > state.cpu_stats.score) {
+                        ctx.fillStyle = "#FFD700";
+                        ctx.fillText("YOU WIN !!", canvas.width/2, canvas.height/2 - 40);
+                    } else if(state.stats.score === state.cpu_stats.score) {
+                        ctx.fillStyle = "#FFF";
+                        ctx.fillText("DRAW", canvas.width/2, canvas.height/2 - 40);
+                    } else {
+                        ctx.fillStyle = "#9E9E9E";
+                        ctx.fillText("YOU LOSE...", canvas.width/2, canvas.height/2 - 40);
+                    }
+                }
+
+                ctx.fillStyle = "#fff";
+                ctx.font = "bold 56px sans-serif";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                if (state.stats.score >= state.target_score || state.mode === "cpu") {
+                    ctx.fillStyle = "#4CAF50";
+                    ctx.fillText("FINISH!", canvas.width/2, canvas.height/2 + (state.mode==="cpu"?30:0));
+                } else {
+                    ctx.fillStyle = "#F44336";
+                    ctx.fillText("GAME OVER", canvas.width/2, canvas.height/2);
+                }
+            }
+        }
+
+        function startSimulation() {
+            const player_name = document.getElementById('player_name').value || "Guest";
+            const num_scouts = parseInt(document.getElementById('num_scouts').value) || 1;
+            const num_collectors = parseInt(document.getElementById('num_collectors').value) || 4;
+            const max_steps = parseInt(document.getElementById('max_steps').value) || 120;
+            const target_score = parseInt(document.getElementById('target_score').value) || 2000;
+            const max_battery = parseInt(document.getElementById('max_battery').value) || 200;
+            const charge_time = parseInt(document.getElementById('charge_time').value) || 10;
+            const fish_stress_limit = parseFloat(document.getElementById('fish_stress_limit').value) || 10.0;
+
+            sendSettings();
+
+            document.getElementById('view-config').classList.remove('active');
+            document.getElementById('view-sim').classList.add('active');
+
+            fetch('/reset', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    player_name, 
+                    mode: currentMode,
+                    num_scouts, 
+                    num_collectors, 
+                    max_steps, 
+                    target_score, 
+                    max_battery, 
+                    charge_time,
+                    fish_stress_limit
+                })
+            });
+        }
+
+        function sendSettings() {
+            const w_trash = document.getElementById('w_trash').value;
+            const w_avoidfish = document.getElementById('w_avoidfish').value;
+            const w_avoidrobot = document.getElementById('w_avoidrobot').value;
+            
+            fetch('/update_settings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    w_trash: parseFloat(w_trash),
+                    w_avoidfish: parseFloat(w_avoidfish),
+                    w_avoidrobot: parseFloat(w_avoidrobot)
+                })
+            });
+        }
+
+        function clearLeaderboard() {
+            if (confirm("本当に歴代ランキングの記録をすべて削除しますか？\n（この操作は取り消せません）")) {
+                fetch('/clear_leaderboard', { method: 'POST' });
+            }
+        }
+
+        function showReport() {
+            if(!currentState || !currentState.final_report) return;
+            const rep = currentState.final_report;
+
+            document.getElementById('report_modal').style.display = "flex";
+
+            document.getElementById('rep_name').innerText = rep.name + " さん";
+            document.getElementById('rep_score').innerText = rep.score + " pt";
+            document.getElementById('rep_scout').innerText = rep.num_scouts;
+            document.getElementById('rep_col').innerText = rep.num_collectors;
+            document.getElementById('rep_weights').innerText = `${rep.w_trash.toFixed(1)} / ${rep.w_avoidfish.toFixed(1)} / ${rep.w_avoidrobot.toFixed(1)}`;
+
+            const isSolo = rep.mode === "solo";
+            document.getElementById('rep_title').innerText = isSolo ? "📝 プレイレポート (ソロ)" : "📝 プレイレポート (VS AI)";
+            
+            const resText = document.getElementById('rep_result_text');
+            if (isSolo) {
+                document.getElementById('rep_rank_area').style.display = "block";
+                document.getElementById('rep_cpu_area').style.display = "none";
+                document.getElementById('rep_rank').innerText = rep.rank;
+                document.getElementById('rep_total').innerText = rep.total_players;
+                document.getElementById('rep_dev').innerText = rep.deviation.toFixed(1);
+                resText.style.display = "none";
+            } else {
+                document.getElementById('rep_rank_area').style.display = "none";
+                document.getElementById('rep_cpu_area').style.display = "block";
+                document.getElementById('rep_cpu_score').innerText = rep.cpu_score;
+                
+                resText.style.display = "block";
+                if(rep.is_win) {
+                    resText.innerText = "🎉 VICTORY (勝利)";
+                    resText.style.color = "#4CAF50";
+                } else if (rep.score === rep.cpu_score) {
+                    resText.innerText = "⚖️ DRAW (引き分け)";
+                    resText.style.color = "#FF9800";
+                } else {
+                    resText.innerText = "💀 DEFEAT (敗北)";
+                    resText.style.color = "#F44336";
+                }
+            }
+
+            try {
+                if(typeof QRious !== "undefined") {
+                    const qrText = isSolo 
+                        ? `海洋プラ回収 [ソロ]\n名前: ${rep.name}\nスコア: ${rep.score}pt\n順位: ${rep.rank}位\n偏差値: ${rep.deviation.toFixed(1)}\n編成: 探索${rep.num_scouts} 回収${rep.num_collectors}`
+                        : `海洋プラ回収 [VS AI]\n名前: ${rep.name}\n結果: ${rep.is_win?'勝利':'敗北'}\n自分: ${rep.score}pt\nAI: ${rep.cpu_score}pt\n編成: 探索${rep.num_scouts} 回収${rep.num_collectors}`;
+                    
+                    const utf8Text = unescape(encodeURIComponent(qrText));
+                    new QRious({
+                        element: document.getElementById('qrcode-canvas'),
+                        value: utf8Text,
+                        size: 300,
+                        padding: 15,
+                        level: 'M'
+                    });
+                }
+            } catch(e) {
+                console.error("QR Error:", e);
+            }
+        }
+
+        function closeReport() {
+            document.getElementById('report_modal').style.display = "none";
+        }
+    </script>
+</body>
+</html>

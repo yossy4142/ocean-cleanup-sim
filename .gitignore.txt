@@ -1,0 +1,2 @@
+leaderboard.json
+__pycache__/
